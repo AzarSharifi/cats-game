@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <title>Magic Cats Merge & Idle</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f172a;
+            color: #f8fafc;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 { color: #f43f5e; margin-bottom: 5px; }
+        .stats {
+            font-size: 20px;
+            margin: 15px 0;
+            background: #1e293b;
+            display: inline-block;
+            padding: 12px 30px;
+            border-radius: 12px;
+            border: 2px solid #334155;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        .btn {
+            background: #f43f5e;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+            box-shadow: 0 4px 6px rgba(244,63,94,0.3);
+        }
+        .btn:hover { background: #e11d48; transform: translateY(-2px); }
+        .btn:disabled { background: #475569; cursor: not-allowed; transform: none; }
+        
+        .grid-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            margin: 20px auto;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 110px);
+            grid-gap: 12px;
+            justify-content: center;
+        }
+        .cell {
+            width: 110px;
+            height: 110px;
+            background: #1e293b;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            transition: 0.2s;
+            border: 2px dashed #475569;
+            position: relative;
+        }
+        .cell:hover {
+            background: #334155;
+            transform: scale(1.03);
+        }
+        .cell.selected {
+            border-color: #22c55e !important;
+            background: #0f291e !important;
+            box-shadow: 0 0 10px rgba(34,197,94,0.5);
+        }
+        .cat-emoji {
+            font-size: 38px;
+            margin-bottom: 2px;
+        }
+        .cat-level {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        /* رنگ‌بندی سطوح */
+        .lvl-wood { background: #854d0e; color: #fef08a; border: 1px solid #ca8a04; }
+        .lvl-silver { background: #475569; color: #f1f5f9; border: 1px solid #94a3b8; }
+        .lvl-gold { background: #a16207; color: #fef08a; border: 1px solid #eab308; }
+        .lvl-diamond { background: #0369a1; color: #e0f2fe; border: 1px solid #38bdf8; box-shadow: 0 0 8px #38bdf8; }
+
+        .locked-row-container {
+            margin-top: 10px;
+            border-top: 2px dashed #334155;
+            padding-top: 15px;
+        }
+        .locked-cell {
+            background: #0f172a;
+            border: 2px dashed #334155;
+            color: #64748b;
+            font-size: 13px;
+            text-align: center;
+        }
+        .hint {
+            margin-top: 20px;
+            color: #94a3b8;
+            font-size: 14px;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🏰 Magic Cats Merge & Idle</h1>
+    
+    <div class="stats">
+        🪙 Coins: <span id="coins">15</span> | ⚡ Income: <span id="cps">0</span> Coins/sec
+    </div>
+
+    <div class="controls">
+        <button class="btn" onclick="buyCat()">Buy Level 1 Cat (Cost: <span id="buyCost">10</span> 🪙)</button>
+    </div>
+
+    <div class="grid-container">
+        <!-- Main 3x3 Grid (9 cells) -->
+        <div class="grid" id="mainGrid"></div>
+
+        <!-- Special VIP High-Level Row -->
+        <div class="locked-row-container">
+            <div style="margin-bottom: 8px; font-size: 14px; color: #38bdf8;">⭐ VIP High-Level Row (Unlocked as you expand)</div>
+            <div class="grid" id="vipGrid"></div>
+        </div>
+    </div>
+
+    <div class="hint">
+        <b>How to play:</b> Click a cell to buy/place cats. Click one cat, then another of the same level to merge them!<br>
+        Level tiers: <span style="color:#ca8a04">Wood</span> ➔ <span style="color:#94a3b8">Silver</span> ➔ <span style="color:#eab308">Gold</span> ➔ <span style="color:#38bdf8">Diamond</span>
+    </div>
+
+    <script>
+        let coins = 15;
+        let buyCost = 10;
+        
+        // شبکه اصلی 9 خانه (3x3) و ردیف ویژه 3 خانه
+        let mainGrid = [null, null, null, null, null, null, null, null, null];
+        let vipGrid = [
+            { unlocked: false, cat: null, cost: 100 },
+            { unlocked: false, cat: null, cost: 250 },
+            { unlocked: false, cat: null, cost: 500 }
+        ];
+
+        let selected = { type: null, index: null }; // type: 'main' or 'vip'
+
+        // مشخصات سطوح گربه‌ها (سرعت تولید سکه کندتر شده است: هر 3 ثانیه یک‌بار معادل درآمد تقسیم بر 3)
+        const catLevels = [
+            { emoji: '🐱', name: 'Wood Lvl 1', class: 'lvl-wood', income: 0.3 },
+            { emoji: '😺', name: 'Wood Lvl 2', class: 'lvl-wood', income: 0.9 },
+            { emoji: '😸', name: 'Silver Lvl 3', class: 'lvl-silver', income: 3 },
+            { emoji: '😻', name: 'Silver Lvl 4', class: 'lvl-silver', income: 9 },
+            { emoji: '🐯', name: 'Gold Lvl 5', class: 'lvl-gold', income: 25 },
+            { emoji: '🦁', name: 'Gold Lvl 6', class: 'lvl-gold', income: 70 },
+            { emoji: '✨', name: 'Diamond Lvl 7', class: 'lvl-diamond', income: 200 }
+        ];
+
+        function render() {
+            // رندر کردن گرید اصلی
+            const mainContainer = document.getElementById('mainGrid');
+            mainContainer.innerHTML = '';
+            mainGrid.forEach((cat, index) => {
+                mainContainer.appendChild(createCellElement(cat, 'main', index));
+            });
+
+            // رندر کردن ردیف ویژه VIP
+            const vipContainer = document.getElementById('vipGrid');
+            vipContainer.innerHTML = '';
+            vipGrid.forEach((slot, index) => {
+                if (!slot.unlocked) {
+                    const lockedCell = document.createElement('div');
+                    lockedCell.className = 'cell locked-cell';
+                    lockedCell.innerHTML = `🔒 Unlock<br>${slot.cost} 🪙`;
+                    lockedCell.onclick = () => unlockVipSlot(index);
+                    vipContainer.appendChild(lockedCell);
+                } else {
+                    vipContainer.appendChild(createCellElement(slot.cat, 'vip', index));
+                }
+            });
+
+            document.getElementById('coins').innerText = Math.floor(coins);
+            document.getElementById('buyCost').innerText = buyCost;
+
+            // محاسبه مجموع درآمد بر ثانیه
+            let totalCps = 0;
+            mainGrid.forEach(cat => { if (cat !== null) totalCps += catLevels[cat].income; });
+            vipGrid.forEach(slot => { if (slot.unlocked && slot.cat !== null) totalCps += catLevels[slot.cat].income; });
+            document.getElementById('cps').innerText = totalCps.toFixed(1);
+        }
+
+        function createCellElement(cat, type, index) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            
+            if (selected.type === type && selected.index === index) {
+                cell.classList.add('selected');
+            }
+
+            if (cat !== null) {
+                const info = catLevels[cat];
+                cell.innerHTML = `
+                    <div class="cat-emoji">${info.emoji}</div>
+                    <div class="cat-level ${info.class}">${info.name}</div>
+                `;
+            } else {
+                cell.innerHTML = '<span style="color:#475569; font-size:24px;">+</span>';
+            }
+
+            cell.onclick = () => handleCellClick(type, index);
+            return cell;
+        }
+
+        function handleCellClick(type, index) {
+            const currentCat = (type === 'main') ? mainGrid[index] : vipGrid[index].cat;
+
+            if (selected.type === null) {
+                if (currentCat !== null) {
+                    selected = { type, index };
+                }
+            } else {
+                // کلیک روی خانه دوم برای جابجایی یا ادغام
+                const prevCat = (selected.type === 'main') ? mainGrid[selected.index] : vipGrid[selected.index].cat;
+
+                if (selected.type === type && selected.index === index) {
+                    // لغو انتخاب
+                    selected = { type: null, index: null };
+                } else if (currentCat === prevCat && currentCat !== null && currentCat < catLevels.length - 1) {
+                    // ادغام (Merge)
+                    if (type === 'main') mainGrid[index]++;
+                    else vipGrid[index].cat++;
+
+                    if (selected.type === 'main') mainGrid[selected.index] = null;
+                    else vipGrid[selected.index].cat = null;
+
+                    selected = { type: null, index: null };
+                } else {
+                    // جابجایی ساده یا تغییر انتخاب
+                    if (type === 'main') {
+                        const temp = mainGrid[index];
+                        mainGrid[index] = prevCat;
+                        if (selected.type === 'main') mainGrid[selected.index] = temp;
+                        else vipGrid[selected.index].cat = temp;
+                    } else {
+                        const temp = vipGrid[index].cat;
+                        vipGrid[index].cat = prevCat;
+                        if (selected.type === 'main') mainGrid[selected.index] = temp;
+                        else vipGrid[selected.index].cat = temp;
+                    }
+                    selected = { type: null, index: null };
+                }
+            }
+            render();
+        }
+
+        function buyCat() {
+            if (coins >= buyCost) {
+                coins -= buyCost;
+                
+                // پیدا کردن خانه خالی اول در گرید اصلی
+                const emptyIndex = mainGrid.indexOf(null);
+                if (emptyIndex !== -1) {
+                    mainGrid[emptyIndex] = 0; // گربه سطح 1 (Wood)
+                    buyCost = Math.floor(buyCost * 1.15); // افزایش قیمت خرید هر بار
+                } else {
+                    alert("Main grid is full! Unlock VIP slots below or merge cats to free up space.");
+                    coins += buyCost; // پس دادن پول
+                }
+                render();
+            } else {
+                alert("Not enough coins! Wait for your cats to generate more.");
+            }
+        }
+
+        function unlockVipSlot(index) {
+            const slot = vipGrid[index];
+            if (coins >= slot.cost) {
+                coins -= slot.cost;
+                slot.unlocked = true;
+                render();
+            } else {
+                alert(`You need ${slot.cost} 🪙 to unlock this VIP slot!`);
+            }
+        }
+
+        // حلقه تولید سکه خودکار (Idle Loop) هر ۱ ثانیه
+        setInterval(() => {
+            let totalCps = 0;
+            mainGrid.forEach(cat => { if (cat !== null) totalCps += catLevels[cat].income; });
+            vipGrid.forEach(slot => { if (slot.unlocked && slot.cat !== null) totalCps += catLevels[slot.cat].income; });
+            
+            coins += totalCps;
+            render();
+        }, 1000);
+
+        // اجرای اولیه
+        render();
+    </script>
+</body>
+</html>
